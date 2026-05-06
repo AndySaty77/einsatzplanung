@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit } from '@/types';
+import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit, Meister } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!.trim();
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim();
@@ -148,4 +148,58 @@ export async function createAbwesenheit(
 export async function deleteAbwesenheit(id: string): Promise<void> {
   const { error } = await supabase.from('abwesenheiten').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── Meister ──────────────────────────────────────────────────
+
+export async function getMeister(): Promise<Meister[]> {
+  const { data, error } = await supabase
+    .from('meister')
+    .select('*')
+    .eq('aktiv', true)
+    .order('name');
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getMeisterFuerProjekt(projektId: string): Promise<Meister[]> {
+  const { data, error } = await supabase
+    .from('ep_projekt_meister')
+    .select('meister:meister(*)')
+    .eq('projekt_id', projektId);
+  if (error) throw error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => r.meister as unknown as Meister).filter(Boolean);
+}
+
+export async function setMeisterFuerProjekt(
+  projektId: string,
+  meisterIds: string[]
+): Promise<void> {
+  // Alle bisherigen löschen, dann neu setzen
+  const { error: delErr } = await supabase
+    .from('ep_projekt_meister')
+    .delete()
+    .eq('projekt_id', projektId);
+  if (delErr) throw delErr;
+
+  if (meisterIds.length === 0) return;
+  const { error: insErr } = await supabase
+    .from('ep_projekt_meister')
+    .insert(meisterIds.map(meister_id => ({ projekt_id: projektId, meister_id })));
+  if (insErr) throw insErr;
+}
+
+export async function getAlleProjektMeister(): Promise<Record<string, Meister[]>> {
+  const { data, error } = await supabase
+    .from('ep_projekt_meister')
+    .select('projekt_id, meister:meister(*)');
+  if (error) throw error;
+  const result: Record<string, Meister[]> = {};
+  for (const row of data ?? []) {
+    if (!result[row.projekt_id]) result[row.projekt_id] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (row.meister) result[row.projekt_id].push(row.meister as unknown as Meister);
+  }
+  return result;
 }

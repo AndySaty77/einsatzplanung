@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Projekt, ProjektStatus } from '@/types';
-import { getProjekte, createProjekt, updateProjekt, deleteProjekt } from '@/lib/supabase';
+import type { Projekt, ProjektStatus, Meister } from '@/types';
+import {
+  getProjekte, createProjekt, updateProjekt, deleteProjekt,
+  getMeister, getMeisterFuerProjekt, setMeisterFuerProjekt, getAlleProjektMeister,
+} from '@/lib/supabase';
 import { formatDatum } from '@/lib/kalender';
 
 const STATUS_LABEL: Record<ProjektStatus, string> = {
@@ -38,10 +41,22 @@ export default function ProjektePage() {
   const [saving, setSaving] = useState(false);
   const [loeschen, setLoeschen] = useState<Projekt | null>(null);
   const [filter, setFilter] = useState<ProjektStatus | 'alle'>('alle');
+  const [alleMeister, setAlleMeister] = useState<Meister[]>([]);
+  const [projektMeisterMap, setProjektMeisterMap] = useState<Record<string, Meister[]>>({});
+  const [selectedMeister, setSelectedMeister] = useState<Set<string>>(new Set());
 
   const lade = useCallback(async () => {
     setLoading(true);
-    try { setProjekte(await getProjekte()); }
+    try {
+      const [proj, meister, pm] = await Promise.all([
+        getProjekte(),
+        getMeister(),
+        getAlleProjektMeister(),
+      ]);
+      setProjekte(proj);
+      setAlleMeister(meister);
+      setProjektMeisterMap(pm);
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -49,6 +64,7 @@ export default function ProjektePage() {
 
   const openNeu = () => {
     setForm({ ...LEER });
+    setSelectedMeister(new Set());
     setModal('neu');
   };
 
@@ -60,6 +76,7 @@ export default function ProjektePage() {
       startdatum: p.startdatum, enddatum: p.enddatum,
       status: p.status, farbe: p.farbe, notizen: p.notizen,
     });
+    setSelectedMeister(new Set((projektMeisterMap[p.id] ?? []).map(m => m.id)));
     setModal(p);
   };
 
@@ -67,11 +84,15 @@ export default function ProjektePage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
+      let projektId: string;
       if (modal === 'neu') {
-        await createProjekt(form);
+        const neu = await createProjekt(form);
+        projektId = neu.id;
       } else if (modal) {
         await updateProjekt(modal.id, form);
-      }
+        projektId = modal.id;
+      } else return;
+      await setMeisterFuerProjekt(projektId, [...selectedMeister]);
       await lade();
       setModal(null);
     } finally {
@@ -135,6 +156,16 @@ export default function ProjektePage() {
                   <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 2 }}>{p.name}</div>
                   {p.auftraggeber && (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.auftraggeber}</div>
+                  )}
+                  {(projektMeisterMap[p.id] ?? []).length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                      {(projektMeisterMap[p.id] ?? []).map(m => (
+                        <span key={m.id} style={{
+                          fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                          background: '#1e3a5f', color: '#93c5fd', fontWeight: 600,
+                        }}>👷 {m.name}</span>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <span style={{
@@ -271,9 +302,37 @@ export default function ProjektePage() {
                   </div>
                 </div>
               </div>
+              {/* Meister-Zuweisung */}
+              {alleMeister.length > 0 && (
+                <div>
+                  <label>Verantwortlicher Meister</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {alleMeister.map(m => {
+                      const aktiv = selectedMeister.has(m.id);
+                      return (
+                        <button key={m.id} type="button" onClick={() => {
+                          setSelectedMeister(prev => {
+                            const next = new Set(prev);
+                            aktiv ? next.delete(m.id) : next.add(m.id);
+                            return next;
+                          });
+                        }} style={{
+                          padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 600,
+                          background: aktiv ? '#1e3a5f' : 'var(--bg-input)',
+                          color: aktiv ? '#93c5fd' : 'var(--text-muted)',
+                          transition: 'all 0.15s',
+                        }}>
+                          {aktiv ? '✓ ' : ''}{m.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div>
                 <label>Notizen</label>
-                <textarea rows={3} value={form.notizen ?? ''} onChange={e => set('notizen', e.target.value || null)} />
+                <textarea rows={2} value={form.notizen ?? ''} onChange={e => set('notizen', e.target.value || null)} />
               </div>
             </div>
 

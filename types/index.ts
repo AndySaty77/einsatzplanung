@@ -53,6 +53,18 @@ export interface Abwesenheit {
   mitarbeiter?: Mitarbeiter;
 }
 
+export interface Meister {
+  id: string;
+  name: string;
+  aktiv: boolean;
+}
+
+export interface ProjektMeister {
+  projekt_id: string;
+  meister_id: string;
+  meister?: Meister;
+}
+
 // Planungsboard cell state per employee per week
 export interface PlanungsZelle {
   mitarbeiter: Mitarbeiter;

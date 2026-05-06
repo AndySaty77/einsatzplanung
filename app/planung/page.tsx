@@ -144,6 +144,7 @@ export default function PlanungPage() {
         <SchnellEinplanungModal
           mitarbeiter={mitarbeiter}
           projekte={projekte}
+          einplanungen={einplanungen}
           onSave={() => lade(jahr)}
           onClose={() => setSchnellModal(false)}
         />
