@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit, KalenderWoche } from '@/types';
 import { gruppiereNachMonat } from '@/lib/kalender';
 import {
@@ -53,16 +53,35 @@ export default function PlanungsBoard({
 }: Props) {
   const [modal, setModal] = useState<ModalState | null>(null);
   const [saving, setSaving] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set()); // einplanung IDs
-  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dragError, setDragError] = useState<string | null>(null);
+
+  // Selection — stored in BOTH state (for re-render) and ref (for reliable access in DnD handlers)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedRef = useRef<Set<string>>(new Set());
+
+  // DnD state — stored as ref (no re-render needed, avoids stale-closure bugs)
+  const dragStateRef = useRef<DragState | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  const updateSelected = (s: Set<string>) => {
+    selectedRef.current = s;
+    setSelected(s);
+  };
 
   // Clear selection with Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelected(new Set()); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') updateSelected(new Set()); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
   }, []);
+
+  // Auto-dismiss drag error
+  useEffect(() => {
+    if (!dragError) return;
+    const t = setTimeout(() => setDragError(null), 3000);
+    return () => clearTimeout(t);
+  }, [dragError]);
 
   // ── Lookup maps ───────────────────────────────────────────
   const einplanungMap = new Map<string, Einplanung>();
@@ -74,15 +93,13 @@ export default function PlanungsBoard({
 
   const abwesenheitMap = new Map<string, Abwesenheit>();
   for (const a of abwesenheiten) {
-    const ma = mitarbeiter.find(m => m.id === a.mitarbeiter_id);
-    if (!ma) continue;
+    if (!mitarbeiter.find(m => m.id === a.mitarbeiter_id)) continue;
     for (const w of wochen) {
       const wDate = new Date(w.wocheStart + 'T00:00:00');
       const vonDate = new Date(a.woche_start + 'T00:00:00');
       const bisDate = a.woche_ende ? new Date(a.woche_ende + 'T00:00:00') : vonDate;
-      if (wDate >= vonDate && wDate <= bisDate) {
+      if (wDate >= vonDate && wDate <= bisDate)
         abwesenheitMap.set(`${a.mitarbeiter_id}__${w.wocheStart}`, a);
-      }
     }
   }
 
@@ -108,49 +125,52 @@ export default function PlanungsBoard({
       ? Math.round((belegt / relevanteMA.length) * 100) : 0);
   }
 
-  // ── Backlog: projects with no assignments in current view ─
+  // ── Backlog: all projects without assignments ─────────────
   const projekteImBoard = new Set(einplanungen.map(e => e.projekt_id));
   const backlogProjekte = projekte.filter(
     p => !projekteImBoard.has(p.id) && p.status !== 'abgeschlossen'
   );
 
   // ── Drag handlers ─────────────────────────────────────────
+  // Use refs so DnD handlers always read the latest values (no stale closures)
 
   const handleCellDragStart = (e: React.DragEvent, einplanung: Einplanung) => {
     e.dataTransfer.effectAllowed = 'move';
-    // Set a dummy text so Firefox doesn't cancel the drag
     e.dataTransfer.setData('text/plain', einplanung.id);
-    setDragState({
+
+    dragStateRef.current = {
       type: 'einplanung',
       einplanungId: einplanung.id,
       mitarbeiterId: einplanung.mitarbeiter_id,
       wocheStart: einplanung.woche_start,
       projektId: einplanung.projekt_id,
-    });
-    // If dragged cell not in selection, reset selection to just this
-    if (!selected.has(einplanung.id)) {
-      setSelected(new Set([einplanung.id]));
+    };
+    setIsDragging(true);
+
+    // If dragged cell not in selection, reset selection to just this one
+    if (!selectedRef.current.has(einplanung.id)) {
+      updateSelected(new Set([einplanung.id]));
     }
   };
 
   const handleProjektDragStart = (e: React.DragEvent, projekt: Projekt) => {
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', `proj:${projekt.id}`);
-    setDragState({ type: 'projekt', projektId: projekt.id });
-    setSelected(new Set());
+    dragStateRef.current = { type: 'projekt', projektId: projekt.id };
+    setIsDragging(true);
+    updateSelected(new Set());
   };
 
-  const handleCellDragOver = (
-    e: React.DragEvent,
-    key: string,
-    einplanung: Einplanung | null,
-  ) => {
-    if (!dragState) return;
-    // Block drop on occupied cells (unless the occupant is in our selection)
-    if (einplanung) {
-      if (dragState.type === 'projekt') return; // never drop project on occupied
-      if (!selected.has(einplanung.id)) return; // occupied by unselected block
+  const handleCellDragOver = (e: React.DragEvent, key: string, cellEinplanung: Einplanung | null) => {
+    const ds = dragStateRef.current;
+    if (!ds) return;
+
+    // Reject if target is occupied by a block NOT in the current selection
+    if (cellEinplanung) {
+      if (ds.type === 'projekt') return;
+      if (!selectedRef.current.has(cellEinplanung.id)) return;
     }
+
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (dragOverKey !== key) setDragOverKey(key);
@@ -163,50 +183,63 @@ export default function PlanungsBoard({
   ) => {
     e.preventDefault();
     setDragOverKey(null);
-    if (!dragState) return;
+
+    const ds = dragStateRef.current;
+    if (!ds) return;
 
     const targetKey = `${targetMA.id}__${targetW.wocheStart}`;
     const targetExisting = einplanungMap.get(targetKey);
 
     setSaving(true);
     try {
-      if (dragState.type === 'projekt') {
+      if (ds.type === 'projekt') {
         if (targetExisting) return;
         await upsertEinplanung({
           mitarbeiter_id: targetMA.id,
-          projekt_id: dragState.projektId,
+          projekt_id: ds.projektId,
           woche_start: targetW.wocheStart,
           bestaetigt: false,
           notiz: null,
         });
 
-      } else if (dragState.type === 'einplanung' && dragState.einplanungId) {
-        const isMulti = selected.size > 1 && selected.has(dragState.einplanungId);
+      } else if (ds.type === 'einplanung' && ds.einplanungId) {
+        const sel = selectedRef.current;
+        const isMulti = sel.size > 1 && sel.has(ds.einplanungId);
 
         if (isMulti) {
-          // ── Multi-drag: shift all selected by same week delta ──
-          const sourceEinp = einplanungById.get(dragState.einplanungId);
+          // ── Multi-drag: shift all selected by same KW-delta ──────
+          const sourceEinp = einplanungById.get(ds.einplanungId);
           if (!sourceEinp) return;
 
           const sourceIdx = wochen.findIndex(w => w.wocheStart === sourceEinp.woche_start);
           const targetIdx = wochen.findIndex(w => w.wocheStart === targetW.wocheStart);
           const delta = targetIdx - sourceIdx;
-          if (delta === 0) return;
 
-          const selectedEinps = einplanungen.filter(e => selected.has(e.id));
+          if (delta === 0) {
+            setDragError('Zielwoche ist dieselbe — bitte auf eine andere KW ziehen.');
+            return;
+          }
+
+          const selectedEinps = einplanungen.filter(e => sel.has(e.id));
           const selectedIds = new Set(selectedEinps.map(e => e.id));
 
-          // Validate: all new positions in range and not occupied by non-selected block
+          // Validate: all new positions must be in range and not occupied by non-selected blocks
           for (const se of selectedEinps) {
             const idx = wochen.findIndex(w => w.wocheStart === se.woche_start);
             const newIdx = idx + delta;
-            if (newIdx < 0 || newIdx >= wochen.length) return;
+            if (newIdx < 0 || newIdx >= wochen.length) {
+              setDragError('Verschieben würde einen Block außerhalb des Jahres bewegen.');
+              return;
+            }
             const newKey = `${se.mitarbeiter_id}__${wochen[newIdx].wocheStart}`;
             const occupant = einplanungMap.get(newKey);
-            if (occupant && !selectedIds.has(occupant.id)) return;
+            if (occupant && !selectedIds.has(occupant.id)) {
+              setDragError('Eine Zielposition ist bereits belegt.');
+              return;
+            }
           }
 
-          // Delete all selected, then re-insert at new positions
+          // Delete all, then insert at new positions (avoids UNIQUE constraint conflicts)
           await Promise.all(selectedEinps.map(se => deleteEinplanung(se.id)));
           await bulkUpsertEinplanungen(selectedEinps.map(se => {
             const idx = wochen.findIndex(w => w.wocheStart === se.woche_start);
@@ -220,46 +253,49 @@ export default function PlanungsBoard({
           }));
 
         } else {
-          // ── Single drag ───────────────────────────────────────
-          if (targetExisting && targetExisting.id !== dragState.einplanungId) return;
-          if (targetMA.id === dragState.mitarbeiterId && targetW.wocheStart === dragState.wocheStart) return;
-          await moveEinplanung(dragState.einplanungId, targetMA.id, targetW.wocheStart);
+          // ── Single drag ───────────────────────────────────────────
+          if (targetExisting && targetExisting.id !== ds.einplanungId) {
+            setDragError('Zielzelle ist bereits belegt.');
+            return;
+          }
+          if (targetMA.id === ds.mitarbeiterId && targetW.wocheStart === ds.wocheStart) return;
+          await moveEinplanung(ds.einplanungId, targetMA.id, targetW.wocheStart);
         }
 
-        setSelected(new Set());
+        updateSelected(new Set());
       }
 
       onRefresh();
     } catch (err) {
       console.error('Drag-Drop Fehler:', err);
+      setDragError('Fehler beim Speichern — bitte Seite neu laden.');
     } finally {
       setSaving(false);
-      setDragState(null);
+      dragStateRef.current = null;
+      setIsDragging(false);
     }
-  }, [dragState, selected, einplanungen, einplanungMap, einplanungById, wochen, onRefresh]);
+  }, [einplanungen, einplanungMap, einplanungById, wochen, onRefresh]);
 
   const handleDragEnd = () => {
-    setDragState(null);
+    dragStateRef.current = null;
+    setIsDragging(false);
     setDragOverKey(null);
   };
 
   // ── Click handler ─────────────────────────────────────────
-
   const handleCellClick = (e: React.MouseEvent, m: Mitarbeiter, w: KalenderWoche) => {
     const key = `${m.id}__${w.wocheStart}`;
     const einplanung = einplanungMap.get(key) ?? null;
     const abwesenheit = abwesenheitMap.get(key) ?? null;
 
     if ((e.ctrlKey || e.metaKey) && einplanung) {
-      setSelected(prev => {
-        const next = new Set(prev);
-        next.has(einplanung.id) ? next.delete(einplanung.id) : next.add(einplanung.id);
-        return next;
-      });
+      const next = new Set(selectedRef.current);
+      next.has(einplanung.id) ? next.delete(einplanung.id) : next.add(einplanung.id);
+      updateSelected(next);
       return;
     }
 
-    setSelected(new Set());
+    updateSelected(new Set());
     setModal({ mitarbeiter: m, woche: w, aktuelleEinplanung: einplanung, aktuelleAbwesenheit: abwesenheit });
   };
 
@@ -286,34 +322,31 @@ export default function PlanungsBoard({
   }, [modal, onRefresh]);
 
   // ── Render ────────────────────────────────────────────────
-
-  const isDraggingAnything = !!dragState;
-
   return (
     <>
-      {/* Selection hint */}
+      {/* Selection bar */}
       {selected.size > 0 && (
         <div style={{
-          padding: '6px 20px',
-          background: '#1e3a5f',
-          borderBottom: '1px solid #3b82f655',
-          fontSize: 12,
-          color: '#93c5fd',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
+          padding: '7px 20px', background: '#1e3358', borderBottom: '1px solid #3b82f655',
+          fontSize: 12, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 12,
+          flexShrink: 0,
         }}>
-          <span>
-            <strong>{selected.size}</strong> Block{selected.size > 1 ? 'e' : ''} ausgewählt —
-            ziehe einen davon, um alle zu verschieben
-          </span>
-          <button
-            className="btn btn-ghost"
-            style={{ padding: '2px 8px', fontSize: 11 }}
-            onClick={() => setSelected(new Set())}
-          >
+          <strong>{selected.size}</strong>&nbsp;Block{selected.size !== 1 ? 'e' : ''} ausgewählt —
+          ziehe einen davon, um alle um dieselbe Anzahl KWs zu verschieben
+          <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11 }}
+            onClick={() => updateSelected(new Set())}>
             ✕ Auswahl aufheben (Esc)
           </button>
+        </div>
+      )}
+
+      {/* Drag error toast */}
+      {dragError && (
+        <div style={{
+          padding: '8px 20px', background: '#450a0a', borderBottom: '1px solid #ef444455',
+          fontSize: 12, color: '#fca5a5', flexShrink: 0,
+        }}>
+          ⚠ {dragError}
         </div>
       )}
 
@@ -328,12 +361,10 @@ export default function PlanungsBoard({
         )}
 
         <table style={{
-          borderCollapse: 'collapse',
-          fontSize: 12,
+          borderCollapse: 'collapse', fontSize: 12,
           minWidth: NAME_W + ROLLE_W + wochen.length * CELL_W,
         }}>
           <thead>
-            {/* Monats-Header */}
             <tr style={{ background: 'var(--bg-sidebar)' }}>
               <th colSpan={2} style={{
                 width: NAME_W + ROLLE_W, minWidth: NAME_W + ROLLE_W,
@@ -345,35 +376,30 @@ export default function PlanungsBoard({
               {monatsGruppen.map(g => (
                 <th key={g.monat} colSpan={g.wochen.length} style={{
                   border: '1px solid var(--border)', padding: '6px 8px',
-                  textAlign: 'center', color: 'var(--text-primary)', fontWeight: 700,
+                  textAlign: 'center', fontWeight: 700,
                   background: 'var(--bg-card)', width: g.wochen.length * CELL_W,
                 }}>
                   {g.monat}
                 </th>
               ))}
             </tr>
-            {/* KW-Header */}
             <tr style={{ background: 'var(--bg-card)' }}>
               <th style={{ width: NAME_W, minWidth: NAME_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>Name</th>
               <th style={{ width: ROLLE_W, minWidth: ROLLE_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>Rolle</th>
               {wochen.map(w => (
                 <th key={w.wocheStart} style={{
-                  width: CELL_W, minWidth: CELL_W,
-                  border: '1px solid var(--border)', padding: '4px',
-                  textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
+                  width: CELL_W, minWidth: CELL_W, border: '1px solid var(--border)',
+                  padding: '4px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600,
                 }}>
                   {w.kw}
                 </th>
               ))}
             </tr>
-            {/* Auslastungs-Zeile */}
             <tr style={{ background: '#0f1117' }}>
               <td colSpan={2} style={{
                 border: '1px solid var(--border)', padding: '3px 8px',
                 fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic',
-              }}>
-                Auslastung
-              </td>
+              }}>Auslastung</td>
               {wochen.map(w => {
                 const pct = auslastungMap.get(w.wocheStart) ?? 0;
                 const color = pct >= 80 ? '#15803d' : pct >= 50 ? '#92400e' : '#7f1d1d';
@@ -394,20 +420,16 @@ export default function PlanungsBoard({
               <tr key={m.id} style={{ background: idx % 2 === 0 ? 'var(--bg-base)' : '#12151f' }}>
                 <td style={{
                   border: '1px solid var(--border)', padding: '5px 8px',
-                  fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap',
+                  fontWeight: 600, whiteSpace: 'nowrap',
                   position: 'sticky', left: 0,
                   background: idx % 2 === 0 ? 'var(--bg-base)' : '#12151f', zIndex: 1,
-                }}>
-                  {m.name}
-                </td>
+                }}>{m.name}</td>
                 <td style={{
                   border: '1px solid var(--border)', padding: '5px 8px',
                   color: 'var(--text-muted)', whiteSpace: 'nowrap',
                   position: 'sticky', left: NAME_W,
                   background: idx % 2 === 0 ? 'var(--bg-base)' : '#12151f', zIndex: 1,
-                }}>
-                  {m.rolle}
-                </td>
+                }}>{m.rolle}</td>
 
                 {wochen.map(w => {
                   const key = `${m.id}__${w.wocheStart}`;
@@ -416,7 +438,7 @@ export default function PlanungsBoard({
                   const projekt = einplanung ? projektMap.get(einplanung.projekt_id) : null;
                   const isSelected = einplanung ? selected.has(einplanung.id) : false;
                   const isDragOver = dragOverKey === key;
-                  const isDraggingThis = dragState?.einplanungId === einplanung?.id;
+                  const isDraggingThis = dragStateRef.current?.einplanungId === einplanung?.id;
 
                   let cellBg = 'transparent';
                   let cellText = '';
@@ -434,13 +456,12 @@ export default function PlanungsBoard({
                     if (!einplanung!.bestaetigt) cellBorder = `2px dashed ${projekt.farbe}`;
                   }
 
-                  // Overlay styles for selection/drag
                   let outline = 'none';
-                  let opacity = isDraggingThis ? 0.4 : 1;
+                  const opacity = isDraggingThis ? 0.35 : 1;
                   if (isSelected) outline = '2px solid #facc15';
                   if (isDragOver) {
                     outline = '2px solid #60a5fa';
-                    cellBg = cellBg === 'transparent' ? '#1e3a5f55' : cellBg;
+                    if (!cellBg || cellBg === 'transparent') cellBg = '#1e3a5f44';
                   }
 
                   return (
@@ -455,10 +476,10 @@ export default function PlanungsBoard({
                       onClick={e => handleCellClick(e, m, w)}
                       title={
                         projekt
-                          ? `${projekt.name}${!einplanung?.bestaetigt ? ' (Platzhalter)' : ''}${isSelected ? ' · Ausgewählt' : ''}`
+                          ? `${projekt.name}${!einplanung?.bestaetigt ? ' (Platzhalter)' : ''}${isSelected ? ' · Ausgewählt (Ctrl+Klick)' : ''}`
                           : abwesenheit ? abwesenheit.typ
-                          : isDraggingAnything ? 'Hier ablegen'
-                          : 'Klicken zum Einplanen'
+                          : isDragging ? 'Hier ablegen'
+                          : 'Klicken zum Einplanen · Ctrl+Klick zum Auswählen'
                       }
                       style={{
                         border: cellBorder,
@@ -466,7 +487,9 @@ export default function PlanungsBoard({
                         textAlign: 'center',
                         background: cellBg,
                         color: cellColor,
-                        cursor: einplanung ? (isDraggingAnything ? 'copy' : 'grab') : isDraggingAnything ? 'copy' : 'pointer',
+                        cursor: einplanung && !abwesenheit
+                          ? (isDragging ? 'copy' : 'grab')
+                          : isDragging ? 'crosshair' : 'pointer',
                         fontSize: 11,
                         maxWidth: CELL_W,
                         overflow: 'hidden',
@@ -475,10 +498,10 @@ export default function PlanungsBoard({
                         opacity,
                         outline,
                         outlineOffset: '-2px',
-                        transition: 'outline 0.05s, background 0.05s',
                         userSelect: 'none',
+                        transition: 'background 0.05s',
                       }}
-                      onMouseEnter={e => { if (!isDraggingAnything) e.currentTarget.style.filter = 'brightness(1.2)'; }}
+                      onMouseEnter={e => { if (!isDragging) e.currentTarget.style.filter = 'brightness(1.2)'; }}
                       onMouseLeave={e => { e.currentTarget.style.filter = ''; }}
                     >
                       {cellText}
@@ -491,22 +514,29 @@ export default function PlanungsBoard({
         </table>
       </div>
 
-      {/* ── Arbeitsvorrat (Backlog) ─────────────────────────── */}
-      {backlogProjekte.length > 0 && (
+      {/* ── Arbeitsvorrat ─────────────────────────────────── */}
+      <div style={{
+        borderTop: '2px dashed var(--border)',
+        padding: '14px 20px',
+        background: 'var(--bg-sidebar)',
+        flexShrink: 0,
+      }}>
         <div style={{
-          borderTop: '2px dashed var(--border)',
-          padding: '14px 20px',
-          background: 'var(--bg-sidebar)',
+          fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
         }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
-            textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
-          }}>
-            Arbeitsvorrat — {backlogProjekte.length} Projekt{backlogProjekte.length !== 1 ? 'e' : ''} ohne Einplanung
+          Arbeitsvorrat
+          {backlogProjekte.length > 0
+            ? ` — ${backlogProjekte.length} Projekt${backlogProjekte.length !== 1 ? 'e' : ''} ohne Einplanung`
+            : ' — alle Projekte sind eingeplant'}
+          {backlogProjekte.length > 0 && (
             <span style={{ fontWeight: 400, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>
-              (auf eine Zelle ziehen zum Einplanen)
+              (auf eine leere Zelle ziehen zum Einplanen)
             </span>
-          </div>
+          )}
+        </div>
+
+        {backlogProjekte.length > 0 ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {backlogProjekte.map(p => (
               <div
@@ -526,12 +556,11 @@ export default function PlanungsBoard({
                   boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  transition: 'transform 0.1s, box-shadow 0.1s',
+                  gap: 5,
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+                  e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.5)';
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = '';
@@ -542,8 +571,12 @@ export default function PlanungsBoard({
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            Neue Projekte (angelegt ohne Einplanung) erscheinen hier und können per Drag auf eine Zelle eingeplant werden.
+          </div>
+        )}
+      </div>
 
       {modal && (
         <EinplanungsModal
