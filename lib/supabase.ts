@@ -122,6 +122,18 @@ export async function deleteEinplanung(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function moveEinplanung(
+  id: string,
+  newMitarbeiterId: string,
+  newWocheStart: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('einplanungen')
+    .update({ mitarbeiter_id: newMitarbeiterId, woche_start: newWocheStart })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ── Abwesenheiten ─────────────────────────────────────────────
 
 export async function getAbwesenheiten(
