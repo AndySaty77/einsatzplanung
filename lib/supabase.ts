@@ -106,6 +106,17 @@ export async function upsertEinplanung(
   return data;
 }
 
+// Bulk-Einplanung: mehrere Mitarbeiter × mehrere KWs auf einmal
+export async function bulkUpsertEinplanungen(
+  entries: Omit<Einplanung, 'id' | 'erstellt_am' | 'projekt' | 'mitarbeiter'>[]
+): Promise<void> {
+  if (entries.length === 0) return;
+  const { error } = await supabase
+    .from('einplanungen')
+    .upsert(entries, { onConflict: 'mitarbeiter_id,woche_start' });
+  if (error) throw error;
+}
+
 export async function deleteEinplanung(id: string): Promise<void> {
   const { error } = await supabase.from('einplanungen').delete().eq('id', id);
   if (error) throw error;

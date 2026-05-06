@@ -291,6 +291,7 @@ export default function PlanungsBoard({
           aktuelleAbwesenheit={modal.aktuelleAbwesenheit}
           saving={saving}
           onSave={handleSave}
+          onAbwesenheitSaved={onRefresh}
           onClose={() => setModal(null)}
         />
       )}

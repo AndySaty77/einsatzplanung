@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import PlanungsBoard from '@/components/planung/PlanungsBoard';
+import SchnellEinplanungModal from '@/components/planung/SchnellEinplanungModal';
 import { getMitarbeiter, getProjekte, getEinplanungen, getAbwesenheiten } from '@/lib/supabase';
 import { generiereKalenderwochen, toISODate, getMontag } from '@/lib/kalender';
 import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit, KalenderWoche } from '@/types';
@@ -11,6 +12,7 @@ export default function PlanungPage() {
   const [jahr, setJahr] = useState(currentYear);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [schnellModal, setSchnellModal] = useState(false);
 
   const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
   const [projekte, setProjekte] = useState<Projekt[]>([]);
@@ -79,6 +81,15 @@ export default function PlanungPage() {
           >›</button>
         </div>
 
+        <button
+          className="btn btn-primary"
+          style={{ fontSize: 13 }}
+          onClick={() => setSchnellModal(true)}
+          disabled={loading}
+        >
+          ⚡ Schnell-Einplanung
+        </button>
+
         {/* Legende */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -128,6 +139,15 @@ export default function PlanungPage() {
           />
         )}
       </div>
+
+      {schnellModal && (
+        <SchnellEinplanungModal
+          mitarbeiter={mitarbeiter}
+          projekte={projekte}
+          onSave={() => lade(jahr)}
+          onClose={() => setSchnellModal(false)}
+        />
+      )}
     </div>
   );
 }
