@@ -171,9 +171,9 @@ export async function getMeister(): Promise<Meister[]> {
     .eq('aktiv', true)
     .order('name');
   if (error) throw error;
-  // Deduplicate by ID (safety net for DB duplicates)
+  // Deduplicate by name (DB may contain duplicate rows with different IDs)
   const seen = new Set<string>();
-  return (data ?? []).filter(m => seen.has(m.id) ? false : (seen.add(m.id), true));
+  return (data ?? []).filter(m => seen.has(m.name) ? false : (seen.add(m.name), true));
 }
 
 export async function getMeisterFuerProjekt(projektId: string): Promise<Meister[]> {
