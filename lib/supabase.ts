@@ -87,7 +87,7 @@ export async function getEinplanungen(
 ): Promise<Einplanung[]> {
   const { data, error } = await supabase
     .from('einplanungen')
-    .select('*, projekt:ep_projekte(*), mitarbeiter:mitarbeiter(*)')
+    .select('*, projekt:ep_projekte!projekt_id(*), mitarbeiter:mitarbeiter!mitarbeiter_id(*)')
     .gte('woche_start', vonDatum)
     .lte('woche_start', bisDatum);
   if (error) throw error;
@@ -100,7 +100,7 @@ export async function upsertEinplanung(
   const { data, error } = await supabase
     .from('einplanungen')
     .upsert(e, { onConflict: 'mitarbeiter_id,woche_start' })
-    .select('*, projekt:ep_projekte(*), mitarbeiter:mitarbeiter(*)')
+    .select('*, projekt:ep_projekte!projekt_id(*), mitarbeiter:mitarbeiter!mitarbeiter_id(*)')
     .single();
   if (error) throw error;
   return data;
@@ -120,7 +120,8 @@ export async function getAbwesenheiten(
   const { data, error } = await supabase
     .from('abwesenheiten')
     .select('*, mitarbeiter:mitarbeiter(*)')
-    .or(`woche_start.lte.${bisDatum},woche_ende.gte.${vonDatum},and(woche_start.lte.${bisDatum},woche_ende.is.null)`);
+    .gte('woche_start', vonDatum)
+    .lte('woche_start', bisDatum);
   if (error) throw error;
   return data ?? [];
 }

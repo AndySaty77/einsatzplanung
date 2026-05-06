@@ -43,7 +43,8 @@ export default function PlanungPage() {
       setAbwesenheiten(abw);
       setWochen(kws);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Fehler beim Laden');
+      const msg = e instanceof Error ? e.message : JSON.stringify(e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
