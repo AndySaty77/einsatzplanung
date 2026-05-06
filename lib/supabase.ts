@@ -171,7 +171,9 @@ export async function getMeister(): Promise<Meister[]> {
     .eq('aktiv', true)
     .order('name');
   if (error) throw error;
-  return data ?? [];
+  // Deduplicate by ID (safety net for DB duplicates)
+  const seen = new Set<string>();
+  return (data ?? []).filter(m => seen.has(m.id) ? false : (seen.add(m.id), true));
 }
 
 export async function getMeisterFuerProjekt(projektId: string): Promise<Meister[]> {
@@ -211,7 +213,9 @@ export async function getAlleProjektMeister(): Promise<Record<string, Meister[]>
   for (const row of data ?? []) {
     if (!result[row.projekt_id]) result[row.projekt_id] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (row.meister) result[row.projekt_id].push(row.meister as unknown as Meister);
+    const m = row.meister as unknown as Meister;
+    if (m && !result[row.projekt_id].some(x => x.id === m.id))
+      result[row.projekt_id].push(m);
   }
   return result;
 }

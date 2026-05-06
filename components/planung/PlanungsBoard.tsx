@@ -129,10 +129,9 @@ export default function PlanungsBoard({
       ? Math.round((belegt / relevanteMA.length) * 100) : 0);
   }
 
-  // ── Backlog: projects without any assignment in current year ──
-  const projekteImBoard = new Set(einplanungen.map(e => e.projekt_id));
+  // ── Backlog: projects explicitly marked as Arbeitsvorrat ──────
   const backlogProjekte = projekte.filter(
-    p => !projekteImBoard.has(p.id) && p.status !== 'abgeschlossen'
+    p => p.ist_arbeitsvorrat && p.status !== 'abgeschlossen'
   );
 
   // ── Main board drag handlers ──────────────────────────────

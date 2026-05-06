@@ -30,7 +30,7 @@ const FARBEN = [
 const LEER: Omit<Projekt, 'id' | 'erstellt_am' | 'aktualisiert_am'> = {
   name: '', auftraggeber: null, volumen: null, stunden_geplant: null,
   fertigstellung_prozent: 0, startdatum: null, enddatum: null,
-  status: 'geplant', farbe: '#3b82f6', notizen: null,
+  status: 'geplant', farbe: '#3b82f6', notizen: null, ist_arbeitsvorrat: false,
 };
 
 export default function ProjektePage() {
@@ -75,6 +75,7 @@ export default function ProjektePage() {
       fertigstellung_prozent: p.fertigstellung_prozent,
       startdatum: p.startdatum, enddatum: p.enddatum,
       status: p.status, farbe: p.farbe, notizen: p.notizen,
+      ist_arbeitsvorrat: p.ist_arbeitsvorrat ?? false,
     });
     setSelectedMeister(new Set((projektMeisterMap[p.id] ?? []).map(m => m.id)));
     setModal(p);
@@ -302,6 +303,22 @@ export default function ProjektePage() {
                   </div>
                 </div>
               </div>
+              {/* Arbeitsvorrat */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', padding: '6px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={form.ist_arbeitsvorrat}
+                  onChange={e => set('ist_arbeitsvorrat', e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: '#22c55e', cursor: 'pointer', flexShrink: 0 }}
+                />
+                <span style={{ fontSize: 13 }}>
+                  <strong>In Arbeitsvorrat</strong>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>
+                    (erscheint im Backlog des Planungsboards)
+                  </span>
+                </span>
+              </label>
+
               {/* Meister-Zuweisung */}
               {alleMeister.length > 0 && (
                 <div>

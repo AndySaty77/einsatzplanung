@@ -25,6 +25,7 @@ export interface Projekt {
   status: ProjektStatus;
   farbe: string;
   notizen: string | null;
+  ist_arbeitsvorrat: boolean;
   erstellt_am: string;
   aktualisiert_am: string;
 }
