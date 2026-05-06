@@ -26,6 +26,7 @@ export default function MitarbeiterPage() {
   const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<Abwesenheit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<'neu' | Mitarbeiter | null>(null);
   const [form, setForm] = useState({ ...LEER_MA });
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ export default function MitarbeiterPage() {
 
   const lade = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const ma = await getMitarbeiter();
       setMitarbeiter(ma);
@@ -42,6 +44,8 @@ export default function MitarbeiterPage() {
       const bis = toISODate(getMontag(new Date(year + 1, 11, 31)));
       const abw = await getAbwesenheiten(von, bis);
       setAbwesenheiten(abw);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : JSON.stringify(e));
     } finally {
       setLoading(false);
     }
@@ -113,6 +117,7 @@ export default function MitarbeiterPage() {
       </div>
 
       {loading && <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lade…</div>}
+      {error && <div style={{ padding: 16, color: '#fca5a5', background: '#450a0a', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>Fehler: {error}</div>}
 
       {!loading && grouped.map(g => (
         <div key={g.rolle} style={{ marginBottom: 24 }}>
