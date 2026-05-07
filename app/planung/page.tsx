@@ -71,13 +71,13 @@ export default function PlanungPage() {
           <button
             className="btn btn-ghost"
             style={{ padding: '5px 10px' }}
-            onClick={() => setJahr(j => j - 1)}
+            onClick={() => { setWochen([]); setJahr(j => j - 1); }}
           >‹</button>
           <span style={{ fontSize: 15, fontWeight: 600, minWidth: 50, textAlign: 'center' }}>{jahr}</span>
           <button
             className="btn btn-ghost"
             style={{ padding: '5px 10px' }}
-            onClick={() => setJahr(j => j + 1)}
+            onClick={() => { setWochen([]); setJahr(j => j + 1); }}
           >›</button>
         </div>
 
@@ -118,7 +118,8 @@ export default function PlanungPage() {
 
       {/* Board */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
-        {loading && (
+        {/* Ladeanzeige nur beim Jahreswechsel (wochen noch leer) */}
+        {loading && wochen.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
             Lade Daten…
           </div>
@@ -128,7 +129,8 @@ export default function PlanungPage() {
             Fehler: {error}
           </div>
         )}
-        {!loading && !error && (
+        {/* Board bleibt bei normalem Refresh im DOM → Scroll-Position bleibt erhalten */}
+        {wochen.length > 0 && !error && (
           <PlanungsBoard
             mitarbeiter={mitarbeiter}
             projekte={projekte}
