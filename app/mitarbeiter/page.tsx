@@ -9,7 +9,7 @@ import {
 import type { Abwesenheit } from '@/types';
 import { toISODate, getMontag } from '@/lib/kalender';
 
-const ROLLEN: MitarbeiterRolle[] = ['Obermonteur', 'Monteur', 'Azubi', 'Helfer', 'Lager'];
+const ROLLEN: MitarbeiterRolle[] = ['Obermonteur', 'Monteur', 'Azubi', 'Helfer', 'Lager', 'Kundendienst', 'Elektriker'];
 const ABW_TYPEN: AbwesenheitTyp[] = ['Urlaub', 'Elternzeit', 'Schule', 'Krank', 'Ausgeschieden', 'Sonstiges'];
 
 const ROLLEN_FARBE: Record<MitarbeiterRolle, string> = {
