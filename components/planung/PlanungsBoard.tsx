@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit, KalenderWoche } from '@/types';
-import { gruppiereNachMonat, getKW } from '@/lib/kalender';
+import { gruppiereNachMonat, getKW, toISODate } from '@/lib/kalender';
 import {
   upsertEinplanung, deleteEinplanung, moveEinplanung,
   bulkUpsertEinplanungen, updateProjekt,
@@ -43,6 +43,8 @@ interface DragState {
   mitarbeiterId?: string;
   wocheStart?: string;
   projektId: string;
+  // backlog: die Zelle, von der der Drag gestartet wurde (Anker für Verschiebung)
+  backlogAnchorWocheStart?: string;
 }
 
 const CELL_W = 110;
@@ -159,11 +161,18 @@ export default function PlanungsBoard({
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', `backlog:${projekt.id}:${wocheStart}`);
     const key = `${projekt.id}__${wocheStart}`;
-    // If cell not selected, reset to just this cell
     if (!backlogSelectedRef.current.has(key)) {
-      updateBacklogSelected(new Set([key]));
+      // Keine explizite Ctrl+Klick-Auswahl → alle Zellen dieses Projekts selektieren
+      const allCells = new Set(
+        wochen
+          .filter(w => !!projekt.startdatum && !!projekt.enddatum
+            && w.wocheStart >= projekt.startdatum
+            && w.wocheStart <= projekt.enddatum)
+          .map(w => `${projekt.id}__${w.wocheStart}`)
+      );
+      updateBacklogSelected(allCells.size > 0 ? allCells : new Set([key]));
     }
-    dragStateRef.current = { type: 'backlog', projektId: projekt.id };
+    dragStateRef.current = { type: 'backlog', projektId: projekt.id, backlogAnchorWocheStart: wocheStart };
     setIsDragging(true);
     updateSelected(new Set());
   };
@@ -207,14 +216,32 @@ export default function PlanungsBoard({
     try {
       // ── From Backlog → Main board ──────────────────────────
       if (ds.type === 'backlog') {
-        const cells = [...backlogSelectedRef.current].map(k => {
+        const anchor = ds.backlogAnchorWocheStart;
+        const selectedCells = [...backlogSelectedRef.current].map(k => {
           const [projektId, ...rest] = k.split('__');
-          return { projektId, wocheStart: rest.join('__') };
+          return { projektId, origWocheStart: rest.join('__') };
         });
-        if (cells.length === 0) return;
+        if (selectedCells.length === 0) return;
 
-        // Only create entries for weeks where the employee has no existing assignment
-        const entries = cells
+        // Wochen-Delta: Anker-Zelle → Ziel-Zelle (frei verschiebbar)
+        let deltaWeeks = 0;
+        if (anchor && anchor !== targetW.wocheStart) {
+          const anchorMs = new Date(anchor + 'T00:00:00').getTime();
+          const targetMs = new Date(targetW.wocheStart + 'T00:00:00').getTime();
+          deltaWeeks = Math.round((targetMs - anchorMs) / (7 * 24 * 60 * 60 * 1000));
+        }
+
+        // Alle Zellen um deltaWeeks verschieben
+        const validWocheStarts = new Set(wochen.map(w => w.wocheStart));
+        const cells = selectedCells.map(c => {
+          if (deltaWeeks === 0) return { projektId: c.projektId, wocheStart: c.origWocheStart };
+          const d = new Date(c.origWocheStart + 'T00:00:00');
+          d.setDate(d.getDate() + deltaWeeks * 7);
+          return { projektId: c.projektId, wocheStart: toISODate(d) };
+        });
+
+        const inRange = cells.filter(c => validWocheStarts.has(c.wocheStart));
+        const entries = inRange
           .filter(c => !einplanungMap.has(`${targetMA.id}__${c.wocheStart}`))
           .map(c => ({
             mitarbeiter_id: targetMA.id,
@@ -224,16 +251,20 @@ export default function PlanungsBoard({
             notiz: null,
           }));
 
+        if (inRange.length === 0) {
+          setDragError('Zielposition liegt außerhalb des sichtbaren Jahres.');
+          return;
+        }
         if (entries.length === 0) {
-          setDragError(`Alle ${cells.length} Wochen für ${targetMA.name} bereits belegt — nichts eingetragen.`);
+          setDragError(`Alle ${inRange.length} Wochen für ${targetMA.name} bereits belegt — nichts eingetragen.`);
           return;
         }
 
         await bulkUpsertEinplanungen(entries);
         updateBacklogSelected(new Set());
-        const skipped = cells.length - entries.length;
+        const skipped = inRange.length - entries.length;
         if (skipped > 0) {
-          setDragError(`${entries.length} von ${cells.length} Blöcken eingeplant — ${skipped} Woche${skipped !== 1 ? 'n' : ''} für ${targetMA.name} bereits belegt und übersprungen.`);
+          setDragError(`${entries.length} von ${inRange.length} Blöcken eingeplant — ${skipped} Woche${skipped !== 1 ? 'n' : ''} für ${targetMA.name} bereits belegt und übersprungen.`);
         }
         onRefresh();
         return;
@@ -492,7 +523,7 @@ export default function PlanungsBoard({
                 <td style={{ position: 'sticky', left: NAME_W, zIndex: 2, background: '#0a0f1a', border: '1px solid var(--border)', padding: '8px 12px', width: ROLLE_W, minWidth: ROLLE_W }} />
                 <td colSpan={wochen.length} style={{ border: '1px solid var(--border)', padding: '8px 12px', fontSize: 11, color: 'var(--text-muted)', fontStyle: backlogProjekte.length === 0 ? 'italic' : 'normal' }}>
                   {backlogProjekte.length > 0
-                    ? 'Ctrl+Klick zum Mehrfachauswählen · auf einen Mitarbeiter ziehen zum Einplanen'
+                    ? 'Auf Mitarbeiter ziehen — landet frei an der Zielposition · Ctrl+Klick für individuelle Auswahl'
                     : 'Alle Projekte sind bereits eingeplant — neue Projekte ohne Einplanung erscheinen hier'}
                 </td>
               </tr>
