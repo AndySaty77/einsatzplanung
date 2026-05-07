@@ -5,7 +5,7 @@ import type { Mitarbeiter, Projekt, Einplanung, Abwesenheit, KalenderWoche } fro
 import { gruppiereNachMonat, getKW } from '@/lib/kalender';
 import {
   upsertEinplanung, deleteEinplanung, moveEinplanung,
-  bulkUpsertEinplanungen,
+  bulkUpsertEinplanungen, updateProjekt,
 } from '@/lib/supabase';
 import EinplanungsModal from './EinplanungsModal';
 
@@ -224,12 +224,16 @@ export default function PlanungsBoard({
           }));
 
         if (entries.length === 0) {
-          setDragError('Alle gewählten Wochen sind für diesen Mitarbeiter bereits belegt.');
+          setDragError(`Alle ${cells.length} Wochen für ${targetMA.name} bereits belegt — nichts eingetragen.`);
           return;
         }
 
         await bulkUpsertEinplanungen(entries);
         updateBacklogSelected(new Set());
+        const skipped = cells.length - entries.length;
+        if (skipped > 0) {
+          setDragError(`${entries.length} von ${cells.length} Blöcken eingeplant — ${skipped} Woche${skipped !== 1 ? 'n' : ''} für ${targetMA.name} bereits belegt und übersprungen.`);
+        }
         onRefresh();
         return;
       }
@@ -347,6 +351,16 @@ export default function PlanungsBoard({
       setSaving(false);
     }
   }, [modal, onRefresh]);
+
+  // ── Backlog: Projekt aus Arbeitsvorrat entfernen ──────────
+  const handleRemoveFromBacklog = async (p: Projekt) => {
+    try {
+      await updateProjekt(p.id, { ist_arbeitsvorrat: false });
+      onRefresh();
+    } catch (err) {
+      console.error('Fehler beim Entfernen aus Arbeitsvorrat:', err);
+    }
+  };
 
   // ── KW range helper for backlog label ─────────────────────
   const kwRange = (p: Projekt) => {
@@ -487,9 +501,18 @@ export default function PlanungsBoard({
                     <td style={{ border: '1px solid var(--border)', padding: '5px 8px', fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 0, background: idx % 2 === 0 ? '#0d1117' : '#0a0e16', zIndex: 1, width: NAME_W, minWidth: NAME_W, color: p.farbe }}>
                       {p.name}
                     </td>
-                    {/* KW range label */}
+                    {/* KW range label + Entfernen-Button */}
                     <td style={{ border: '1px solid var(--border)', padding: '5px 8px', color: 'var(--text-muted)', whiteSpace: 'nowrap', position: 'sticky', left: NAME_W, background: idx % 2 === 0 ? '#0d1117' : '#0a0e16', zIndex: 1, width: ROLLE_W, minWidth: ROLLE_W, fontSize: 11 }}>
-                      {kwRange(p)}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                        <span>{kwRange(p)}</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleRemoveFromBacklog(p); }}
+                          title="Aus Arbeitsvorrat entfernen"
+                          style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                          onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = '#6b7280'; }}
+                        >✕</button>
+                      </div>
                     </td>
                     {/* KW cells */}
                     {wochen.map(w => {
