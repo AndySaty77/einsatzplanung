@@ -1,16 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 const navItems = [
-  { href: '/planung',     label: 'Einsatzplanung', icon: '📋' },
-  { href: '/projekte',    label: 'Projekte',        icon: '🏗️' },
-  { href: '/mitarbeiter', label: 'Mitarbeiter',     icon: '👷' },
+  { href: '/planung',       label: 'Einsatzplanung', icon: '📋' },
+  { href: '/projekte',      label: 'Projekte',        icon: '🏗️' },
+  { href: '/mitarbeiter',   label: 'Mitarbeiter',     icon: '👷' },
+  { href: '/einstellungen', label: 'Einstellungen',   icon: '⚙️' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ email }: { email?: string }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
     <aside style={{
@@ -82,6 +91,30 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Trennlinie + Abmelden */}
+        <div style={{ margin: '10px 4px', borderTop: '1px solid var(--border)' }} />
+        <button
+          onClick={handleLogout}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 12px',
+            borderRadius: 8,
+            width: '100%',
+            fontSize: 13,
+            fontWeight: 400,
+            color: 'var(--text-muted)',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>🚪</span>
+          Abmelden
+        </button>
       </nav>
 
       {/* Footer */}
@@ -91,6 +124,11 @@ export default function Sidebar() {
         fontSize: 11,
         color: 'var(--text-muted)',
       }}>
+        {email && (
+          <div style={{ marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {email}
+          </div>
+        )}
         v1.0 · 2026
       </div>
     </aside>
