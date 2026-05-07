@@ -175,7 +175,8 @@ export default function PlanungsBoard({
     if (!ds) return;
 
     if (ds.type === 'backlog') {
-      if (cellEinplanung) return; // occupied → reject
+      // Immer akzeptieren — die Ziel-WOCHE ist irrelevant, entscheidend sind
+      // die ausgewählten Backlog-Wochen. handleCellDrop überspringt bereits belegte Wochen.
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
       if (dragOverKey !== key) setDragOverKey(key);
