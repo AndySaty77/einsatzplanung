@@ -18,7 +18,7 @@ export async function proxy(request: NextRequest) {
           );
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, { ...options, domain: '.herbstritt-haustechnik.de' })
           );
         },
       },
@@ -38,6 +38,12 @@ export async function proxy(request: NextRequest) {
 
   if (!user) {
     return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // Tool-Zugriffscheck: falls tools-Feld gesetzt ist, muss 'einsatzplanung' enthalten sein
+  const tools = user.user_metadata?.tools as string[] | undefined;
+  if (tools && !tools.includes('einsatzplanung')) {
+    return NextResponse.redirect(new URL('/login?error=access', request.url));
   }
 
   return supabaseResponse;

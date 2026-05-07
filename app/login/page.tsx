@@ -7,6 +7,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const hasError = params.error === '1';
+  const noAccess = params.error === 'access';
 
   return (
     <div style={{
@@ -51,16 +52,13 @@ export default async function LoginPage({
           </p>
 
           {hasError && (
-            <div style={{
-              background: '#7c2d1220',
-              border: '1px solid #7c2d1250',
-              borderRadius: 7,
-              padding: '10px 14px',
-              fontSize: 13,
-              color: '#fca5a5',
-              marginBottom: 18,
-            }}>
+            <div style={{ background: '#7c2d1220', border: '1px solid #7c2d1250', borderRadius: 7, padding: '10px 14px', fontSize: 13, color: '#fca5a5', marginBottom: 18 }}>
               E-Mail oder Passwort ist falsch.
+            </div>
+          )}
+          {noAccess && (
+            <div style={{ background: '#7c2d1220', border: '1px solid #7c2d1250', borderRadius: 7, padding: '10px 14px', fontSize: 13, color: '#fca5a5', marginBottom: 18 }}>
+              Kein Zugriff auf die Einsatzplanung. Bitte Administrator kontaktieren.
             </div>
           )}
 
