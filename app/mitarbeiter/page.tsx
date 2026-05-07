@@ -13,11 +13,13 @@ const ROLLEN: MitarbeiterRolle[] = ['Obermonteur', 'Monteur', 'Azubi', 'Helfer',
 const ABW_TYPEN: AbwesenheitTyp[] = ['Urlaub', 'Elternzeit', 'Schule', 'Krank', 'Ausgeschieden', 'Sonstiges'];
 
 const ROLLEN_FARBE: Record<MitarbeiterRolle, string> = {
-  Obermonteur: '#1e40af',
-  Monteur:     '#065f46',
-  Azubi:       '#4c1d95',
-  Helfer:      '#78350f',
-  Lager:       '#374151',
+  Obermonteur:  '#1e40af',
+  Monteur:      '#065f46',
+  Azubi:        '#4c1d95',
+  Helfer:       '#78350f',
+  Lager:        '#374151',
+  Kundendienst: '#92400e',
+  Elektriker:   '#1e3a5f',
 };
 
 const LEER_MA = { name: '', rolle: 'Monteur' as MitarbeiterRolle, aktiv: true, email: null as string | null };

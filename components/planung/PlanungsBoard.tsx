@@ -9,7 +9,7 @@ import {
 } from '@/lib/supabase';
 import EinplanungsModal from './EinplanungsModal';
 
-const ROLLEN_REIHENFOLGE = ['Obermonteur', 'Monteur', 'Azubi', 'Helfer', 'Lager'];
+const ROLLEN_REIHENFOLGE = ['Obermonteur', 'Monteur', 'Azubi', 'Helfer', 'Lager', 'Kundendienst', 'Elektriker'];
 
 const ABWESENHEIT_FARBEN: Record<string, string> = {
   Urlaub:        '#78350f',
@@ -117,7 +117,7 @@ export default function PlanungsBoard({
 
   const monatsGruppen = gruppiereNachMonat(wochen);
 
-  const relevanteMA = mitarbeiter.filter(m => m.rolle !== 'Lager');
+  const relevanteMA = mitarbeiter.filter(m => m.rolle !== 'Lager' && m.rolle !== 'Kundendienst' && m.rolle !== 'Elektriker');
   const auslastungMap = new Map<string, number>();
   for (const w of wochen) {
     let belegt = 0;
@@ -394,20 +394,20 @@ export default function PlanungsBoard({
         <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: NAME_W + ROLLE_W + wochen.length * CELL_W }}>
           <thead>
             <tr style={{ background: 'var(--bg-sidebar)' }}>
-              <th colSpan={2} style={{ width: NAME_W + ROLLE_W, minWidth: NAME_W + ROLLE_W, border: '1px solid var(--border)', padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Mitarbeiter</th>
+              <th colSpan={2} style={{ width: NAME_W + ROLLE_W, minWidth: NAME_W + ROLLE_W, border: '1px solid var(--border)', padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, position: 'sticky', left: 0, zIndex: 4, background: 'var(--bg-sidebar)' }}>Mitarbeiter</th>
               {monatsGruppen.map(g => (
                 <th key={g.monat} colSpan={g.wochen.length} style={{ border: '1px solid var(--border)', padding: '6px 8px', textAlign: 'center', fontWeight: 700, background: 'var(--bg-card)', width: g.wochen.length * CELL_W }}>{g.monat}</th>
               ))}
             </tr>
             <tr style={{ background: 'var(--bg-card)' }}>
-              <th style={{ width: NAME_W, minWidth: NAME_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>Name</th>
-              <th style={{ width: ROLLE_W, minWidth: ROLLE_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>Rolle</th>
+              <th style={{ width: NAME_W, minWidth: NAME_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11, position: 'sticky', left: 0, zIndex: 4, background: 'var(--bg-card)' }}>Name</th>
+              <th style={{ width: ROLLE_W, minWidth: ROLLE_W, border: '1px solid var(--border)', padding: '4px 8px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11, position: 'sticky', left: NAME_W, zIndex: 4, background: 'var(--bg-card)' }}>Rolle</th>
               {wochen.map(w => (
                 <th key={w.wocheStart} style={{ width: CELL_W, minWidth: CELL_W, border: '1px solid var(--border)', padding: '4px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600 }}>{w.kw}</th>
               ))}
             </tr>
             <tr style={{ background: '#0f1117' }}>
-              <td colSpan={2} style={{ border: '1px solid var(--border)', padding: '3px 8px', fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>Auslastung</td>
+              <td colSpan={2} style={{ border: '1px solid var(--border)', padding: '3px 8px', fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic', position: 'sticky', left: 0, zIndex: 4, background: '#0f1117' }}>Auslastung</td>
               {wochen.map(w => {
                 const pct = auslastungMap.get(w.wocheStart) ?? 0;
                 const color = pct >= 80 ? '#15803d' : pct >= 50 ? '#92400e' : '#7f1d1d';
@@ -467,26 +467,21 @@ export default function PlanungsBoard({
 
         {/* ════ ARBEITSVORRAT-BACKLOG ══════════════════════════ */}
         <div style={{ borderTop: '3px solid var(--border)', marginTop: 8 }}>
-          {/* Backlog header row */}
-          <div style={{ display: 'flex', alignItems: 'center', background: '#0a0f1a', padding: '8px 12px', borderBottom: '1px solid var(--border)', minWidth: NAME_W + ROLLE_W + wochen.length * CELL_W, gap: 12 }}>
-            <span style={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', minWidth: NAME_W + ROLLE_W - 12 }}>
-              Arbeitsvorrat
-            </span>
-            {backlogProjekte.length > 0 ? (
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                Ctrl+Klick zum Mehrfachauswählen · auf einen Mitarbeiter ziehen zum Einplanen
-              </span>
-            ) : (
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Alle Projekte sind bereits eingeplant — neue Projekte ohne Einplanung erscheinen hier
-              </span>
-            )}
-          </div>
-
-          {backlogProjekte.length > 0 && (
-            <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: NAME_W + ROLLE_W + wochen.length * CELL_W }}>
-              <tbody>
-                {backlogProjekte.map((p, idx) => (
+          <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: NAME_W + ROLLE_W + wochen.length * CELL_W }}>
+            <tbody>
+              {/* Sticky header row — bleibt beim horizontalen Scrollen sichtbar */}
+              <tr style={{ background: '#0a0f1a' }}>
+                <td style={{ position: 'sticky', left: 0, zIndex: 2, background: '#0a0f1a', border: '1px solid var(--border)', padding: '8px 12px', width: NAME_W, minWidth: NAME_W, fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+                  Arbeitsvorrat
+                </td>
+                <td style={{ position: 'sticky', left: NAME_W, zIndex: 2, background: '#0a0f1a', border: '1px solid var(--border)', padding: '8px 12px', width: ROLLE_W, minWidth: ROLLE_W }} />
+                <td colSpan={wochen.length} style={{ border: '1px solid var(--border)', padding: '8px 12px', fontSize: 11, color: 'var(--text-muted)', fontStyle: backlogProjekte.length === 0 ? 'italic' : 'normal' }}>
+                  {backlogProjekte.length > 0
+                    ? 'Ctrl+Klick zum Mehrfachauswählen · auf einen Mitarbeiter ziehen zum Einplanen'
+                    : 'Alle Projekte sind bereits eingeplant — neue Projekte ohne Einplanung erscheinen hier'}
+                </td>
+              </tr>
+              {backlogProjekte.map((p, idx) => (
                   <tr key={p.id} style={{ background: idx % 2 === 0 ? '#0d1117' : '#0a0e16' }}>
                     {/* Sticky project name */}
                     <td style={{ border: '1px solid var(--border)', padding: '5px 8px', fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 0, background: idx % 2 === 0 ? '#0d1117' : '#0a0e16', zIndex: 1, width: NAME_W, minWidth: NAME_W, color: p.farbe }}>
@@ -542,9 +537,8 @@ export default function PlanungsBoard({
                     })}
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          )}
+            </tbody>
+          </table>
         </div>
       </div>
 

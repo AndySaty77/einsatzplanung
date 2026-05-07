@@ -1,5 +1,10 @@
--- Migration: Arbeitsvorrat-Flag + Meister-Deduplizierung
+-- Migration: Arbeitsvorrat-Flag + Meister-Deduplizierung + Kundendienst-Rolle
 -- Im Supabase SQL Editor ausführen
+
+-- 0. Mitarbeiter-Rolle CHECK constraint erweitern (Kundendienst + Elektriker)
+ALTER TABLE mitarbeiter DROP CONSTRAINT IF EXISTS mitarbeiter_rolle_check;
+ALTER TABLE mitarbeiter ADD CONSTRAINT mitarbeiter_rolle_check
+  CHECK (rolle IN ('Obermonteur', 'Monteur', 'Azubi', 'Helfer', 'Lager', 'Kundendienst', 'Elektriker'));
 
 -- 1. Spalte hinzufügen (idempotent)
 ALTER TABLE ep_projekte

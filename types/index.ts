@@ -1,4 +1,4 @@
-export type MitarbeiterRolle = 'Obermonteur' | 'Monteur' | 'Azubi' | 'Helfer' | 'Lager';
+export type MitarbeiterRolle = 'Obermonteur' | 'Monteur' | 'Azubi' | 'Helfer' | 'Lager' | 'Kundendienst' | 'Elektriker';
 
 export type ProjektStatus = 'geplant' | 'aktiv' | 'abgeschlossen' | 'pausiert';
 
