@@ -47,6 +47,13 @@ interface DragState {
   backlogAnchorWocheStart?: string;
 }
 
+interface CopyClipboard {
+  projektId: string;
+  bestaetigt: boolean;
+  notiz: string | null;
+  projektName: string;
+}
+
 const CELL_W = 110;
 const NAME_W = 180;
 const ROLLE_W = 110;
@@ -59,6 +66,10 @@ export default function PlanungsBoard({
   const [dragError, setDragError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  const [copyClipboard, setCopyClipboard] = useState<CopyClipboard | null>(null);
+  const copyClipboardRef = useRef<CopyClipboard | null>(null);
+  const updateCopyClipboard = (c: CopyClipboard | null) => { copyClipboardRef.current = c; setCopyClipboard(c); };
 
   // Main board selection (einplanung IDs)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -76,7 +87,11 @@ export default function PlanungsBoard({
   // Clear selections with Escape
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { updateSelected(new Set()); updateBacklogSelected(new Set()); }
+      if (e.key === 'Escape') {
+        updateSelected(new Set());
+        updateBacklogSelected(new Set());
+        updateCopyClipboard(null);
+      }
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
@@ -329,12 +344,46 @@ export default function PlanungsBoard({
     setDragOverKey(null);
   };
 
+  const handleCopy = () => {
+    const sel = selectedRef.current;
+    if (sel.size !== 1) return;
+    const [id] = [...sel];
+    const einp = einplanungById.get(id);
+    if (!einp) return;
+    updateCopyClipboard({
+      projektId: einp.projekt_id,
+      bestaetigt: einp.bestaetigt,
+      notiz: einp.notiz,
+      projektName: projektMap.get(einp.projekt_id)?.name ?? '?',
+    });
+    updateSelected(new Set());
+  };
+
   // ── Click handlers ────────────────────────────────────────
 
   const handleCellClick = (e: React.MouseEvent, m: Mitarbeiter, w: KalenderWoche) => {
     const key = `${m.id}__${w.wocheStart}`;
     const einplanung = einplanungMap.get(key) ?? null;
     const abwesenheit = abwesenheitMap.get(key) ?? null;
+
+    if (copyClipboardRef.current) {
+      if (einplanung) {
+        setDragError('Zielzelle ist bereits belegt.');
+      } else if (!abwesenheit) {
+        const cb = copyClipboardRef.current;
+        setSaving(true);
+        bulkUpsertEinplanungen([{
+          mitarbeiter_id: m.id,
+          projekt_id: cb.projektId,
+          woche_start: w.wocheStart,
+          bestaetigt: cb.bestaetigt,
+          notiz: cb.notiz,
+        }]).then(() => onRefresh())
+           .catch(() => setDragError('Fehler beim Einfügen.'))
+           .finally(() => setSaving(false));
+      }
+      return;
+    }
 
     if ((e.ctrlKey || e.metaKey) && einplanung) {
       const next = new Set(selectedRef.current);
@@ -408,8 +457,19 @@ export default function PlanungsBoard({
       {/* Main board selection bar */}
       {selected.size > 0 && (
         <div style={{ padding: '7px 20px', background: '#1e3358', borderBottom: '1px solid #3b82f655', fontSize: 12, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-          <strong>{selected.size}</strong>&nbsp;Block{selected.size !== 1 ? 'e' : ''} ausgewählt — ziehe einen davon, um alle gleichzeitig zu verschieben
+          <strong>{selected.size}</strong>&nbsp;Block{selected.size !== 1 ? 'e' : ''} ausgewählt — ziehe einen davon, um alle zu verschieben (auch in andere Zeile)
+          {selected.size === 1 && (
+            <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11 }} onClick={handleCopy}>📋 Kopieren</button>
+          )}
           <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => updateSelected(new Set())}>✕ Auswahl aufheben (Esc)</button>
+        </div>
+      )}
+
+      {/* Copy mode bar */}
+      {copyClipboard && (
+        <div style={{ padding: '7px 20px', background: '#0c2a3a', borderBottom: '1px solid #0ea5e955', fontSize: 12, color: '#7dd3fc', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          📋 <strong>{copyClipboard.projektName}</strong> einfügen — leere Zielzelle klicken · beliebig oft
+          <button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => updateCopyClipboard(null)}>✕ Abbrechen (Esc)</button>
         </div>
       )}
 
@@ -497,8 +557,16 @@ export default function PlanungsBoard({
                       onDrop={e => handleCellDrop(e, m, w)}
                       onDragEnd={handleDragEnd}
                       onClick={e => handleCellClick(e, m, w)}
-                      title={projekt ? `${projekt.name}${!einplanung?.bestaetigt ? ' (Platzhalter)' : ''}${isSelected ? ' · Ausgewählt' : ''}` : abwesenheit ? abwesenheit.typ : isDragging ? 'Hier ablegen' : 'Klicken · Ctrl+Klick zum Auswählen'}
-                      style={{ border: cellBorder, padding: '4px', textAlign: 'center', background: cellBg, color: cellColor, cursor: einplanung && !abwesenheit ? (isDragging ? 'copy' : 'grab') : isDragging ? 'crosshair' : 'pointer', fontSize: 11, maxWidth: CELL_W, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity, outline, outlineOffset: '-2px', userSelect: 'none', transition: 'background 0.05s' }}
+                      title={
+                        copyClipboard
+                          ? (einplanung ? 'Belegt — andere Zelle wählen' : abwesenheit ? 'Abwesenheit — nicht möglich' : `📋 ${copyClipboard.projektName} hier einfügen`)
+                          : projekt
+                            ? `${projekt.name}${!einplanung?.bestaetigt ? ' (Platzhalter)' : ''}${isSelected ? ' · Ausgewählt' : ''} · Ziehen = verschieben (auch in andere Zeile)`
+                            : abwesenheit ? abwesenheit.typ
+                            : isDragging ? 'Hier ablegen'
+                            : 'Klicken · Ctrl+Klick zum Auswählen'
+                      }
+                      style={{ border: cellBorder, padding: '4px', textAlign: 'center', background: cellBg, color: cellColor, cursor: copyClipboard ? (!einplanung && !abwesenheit ? 'cell' : 'not-allowed') : einplanung && !abwesenheit ? (isDragging ? 'copy' : 'grab') : isDragging ? 'crosshair' : 'pointer', fontSize: 11, maxWidth: CELL_W, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity, outline, outlineOffset: '-2px', userSelect: 'none', transition: 'background 0.05s' }}
                       onMouseEnter={e => { if (!isDragging) e.currentTarget.style.filter = 'brightness(1.2)'; }}
                       onMouseLeave={e => { e.currentTarget.style.filter = ''; }}
                     >
